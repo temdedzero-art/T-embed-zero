@@ -221,12 +221,11 @@ function goBack() {
   showScreen('screen-board');
 }
 
-// ── Filesystem helpers ──
+// ────────── Filesystem helpers ──────────
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-// Strip ANSI escape sequences from string
 function stripAnsi(str) {
   return str.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
             .replace(/\x1b\[\?[0-9;]*[A-Za-z]/g, '')
@@ -294,7 +293,7 @@ async function waitForString(str, timeout = 5000) {
   return false;
 }
 
-// ── Storage commands ──
+// ────────── Storage commands ──────────
 
 async function listDir(path) {
   if (!connected) return;
@@ -334,7 +333,6 @@ async function downloadFile(path, filename, fileSize) {
   readBuffer = '';
   await sendCommand('storage read_chunks ' + path + ' ' + chunkSize);
 
-  // Wait for "Size: <n>" line
   await waitForString('Size:', 3000);
   await sleep(100);
 
@@ -345,23 +343,19 @@ async function downloadFile(path, filename, fileSize) {
   let received = 0;
 
   while (received < size) {
-    // Wait for "Ready?"
     await waitForString('Ready?', 5000);
     await sleep(50);
     readBuffer = '';
 
-    // Send char to trigger chunk
     await sendRaw('\r');
     await sleep(100);
 
-    // Wait for data
     const expectedBytes = Math.min(chunkSize, size - received);
     const start = Date.now();
     while (readBuffer.length < expectedBytes && Date.now() - start < 5000) {
       await sleep(50);
     }
 
-    // Collect binary data - we need raw bytes
     const chunkData = readBuffer.substring(0, expectedBytes);
     chunks.push(chunkData);
     received += expectedBytes;
@@ -371,10 +365,8 @@ async function downloadFile(path, filename, fileSize) {
     setFilesystemStatus('Downloading ' + filename + '... ' + pct + '%');
   }
 
-  // Wait for prompt to return
   await waitForPrompt(3000);
 
-  // Create blob and download
   const fullData = chunks.join('');
   const bytes = new Uint8Array(fullData.length);
   for (let i = 0; i < fullData.length; i++) {
@@ -411,7 +403,6 @@ async function uploadSingleFile(file) {
   const remotePath = currentPath + '/' + file.name;
   setFilesystemStatus('Uploading ' + file.name + '...');
 
-  // First remove existing file (ignore errors)
   await sendCommand('storage remove ' + remotePath);
   await waitForPrompt(3000);
 
@@ -421,7 +412,6 @@ async function uploadSingleFile(file) {
   readBuffer = '';
   await sendCommand('storage write_chunk ' + remotePath + ' ' + totalSize);
 
-  // Wait for "Ready"
   const ready = await waitForString('Ready', 5000);
   if (!ready) {
     setFilesystemError('Device did not respond with Ready');
@@ -430,7 +420,6 @@ async function uploadSingleFile(file) {
   await sleep(100);
   readBuffer = '';
 
-  // Send data in chunks
   const sendChunkSize = 512;
   let sent = 0;
 
@@ -443,11 +432,9 @@ async function uploadSingleFile(file) {
     const pct = Math.round((sent / totalSize) * 100);
     setFilesystemStatus('Uploading ' + file.name + '... ' + pct + '%');
 
-    // Small delay to not overwhelm the serial buffer
     await sleep(20);
   }
 
-  // Wait for command to finish
   await waitForPrompt(10000);
   setFilesystemStatus('Uploaded ' + file.name + ' (' + formatSize(totalSize) + ')');
 }
@@ -476,7 +463,6 @@ async function editFile(path, filename) {
   if (!connected) return;
   setFilesystemStatus('Downloading ' + filename + ' for editing...');
 
-  // Download the file content
   const chunkSize = 512;
   readBuffer = '';
   await sendCommand('storage read_chunks ' + path + ' ' + chunkSize);
@@ -512,15 +498,12 @@ async function editFile(path, filename) {
 
   await waitForPrompt(3000);
 
-  // Combine chunks into text content
   const fullData = chunks.join('');
   const content = fullData;
 
-  // Show edit dialog
   const newContent = prompt('Edit file content:', content);
-  if (newContent === null) return; // Cancelled
+  if (newContent === null) return;
 
-  // Upload the modified content
   setFilesystemStatus('Saving ' + filename + '...');
 
   await sendCommand('storage remove ' + path);
@@ -559,13 +542,12 @@ async function editFile(path, filename) {
   await listDir(currentPath);
 }
 
-// ── UI Functions ──
+// ────────── UI Functions ──────────
 
 function renderFileList(entries) {
   const list = $('file-list');
   list.innerHTML = '';
 
-  // Parent directory entry
   if (currentPath !== '/ext') {
     const row = createFileRow('..', 'parent', '');
     row.querySelector('.entry-name').onclick = () => {
@@ -575,7 +557,6 @@ function renderFileList(entries) {
     list.appendChild(row);
   }
 
-  // Sort: dirs first, then files
   entries.sort((a, b) => {
     if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
     return a.name.localeCompare(b.name);
@@ -659,7 +640,6 @@ function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// Navigation helper
 window._nav = (path) => listDir(path);
 
 async function connectFilesystem() {
@@ -671,27 +651,21 @@ async function connectFilesystem() {
   try {
     setFilesystemStatus('Connecting to device...');
 
-    // Reinitialize serial connection for CLI
     if (transport) {
       await transport.disconnect();
     }
 
-    // Create new transport for CLI mode
-    transport = new Transport(port, false); // false = no reset
+    transport = new Transport(port, false);
 
-    // Get reader and writer
     reader = port.readable.getReader();
     writer = port.writable.getWriter();
 
     connected = true;
 
-    // Start reading loop
     startReading();
 
-    // Wait a bit for connection to stabilize
     await sleep(1000);
 
-    // Send a command to enter CLI mode
     await sendCommand('');
     await waitForPrompt(5000);
 
@@ -747,7 +721,6 @@ window.goBack = goBack;
 window.connectFilesystem = connectFilesystem;
 window.disconnectFilesystem = disconnectFilesystem;
 
-// Check WebSerial support
 if (!('serial' in navigator)) {
   document.querySelectorAll('.board-card').forEach(c => c.style.pointerEvents = 'none');
   setError('Use Google Chrome or Edge on desktop to flash.');
@@ -764,12 +737,9 @@ if (!('serial' in navigator)) {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    margin: 0;
-    height: 100vh;
-    margin: 0;
     overflow: hidden;
     background: black;
-}
+  }
 
   .container {
     text-align: center;
@@ -777,19 +747,20 @@ if (!('serial' in navigator)) {
     width: 100%;
     padding: 40px 24px;
   }
+
   h1 {
     font-size: 2.2rem;
     font-weight: 700;
     color: #ff8c00;
     margin-bottom: 6px;
   }
+
   .subtitle {
     color: #666;
     font-size: 0.9rem;
     margin-bottom: 40px;
   }
 
-  /* Error banner */
   #error-banner {
     display: none;
     background: #2a0000;
@@ -801,21 +772,21 @@ if (!('serial' in navigator)) {
     font-size: 0.85rem;
   }
 
-  /* Screens */
   .screen { display: none; }
   .screen.active { display: block; }
 
-  /* Screen 0: Board selection */
   .board-heading {
     color: #999;
     font-size: 1rem;
     margin-bottom: 24px;
   }
+
   .board-cards {
     display: flex;
     flex-direction: column;
     gap: 14px;
   }
+
   .board-card {
     background: #141414;
     border: 2px solid #2a2a2a;
@@ -828,30 +799,34 @@ if (!('serial' in navigator)) {
     align-items: center;
     gap: 18px;
   }
+
   .board-card:hover {
     border-color: #ff8c00;
     background: #1a1400;
   }
+
   .board-card.selected {
     border-color: #ff8c00;
     background: #1a1400;
   }
+
   .board-icon {
     font-size: 2rem;
     flex-shrink: 0;
   }
+
   .board-info h3 {
     font-size: 1rem;
     font-weight: 600;
     color: #e0e0e0;
     margin-bottom: 4px;
   }
+
   .board-info p {
     font-size: 0.8rem;
     color: #666;
   }
 
-  /* Screen 1: Connect */
   .connect-text {
     color: #999;
     font-size: 1rem;
@@ -875,9 +850,10 @@ if (!('serial' in navigator)) {
     min-width: 260px;
     justify-content: center;
   }
+
   .btn:hover:not(:disabled) { background: #ff9f2e; transform: scale(1.02); }
-  .btn:disabled { background: #333; color: #666; cursor: not-allowed; transform: none; }
-  .btn.flash-ready { background: #00c853; color: #000; }
+  .btn:disabled { background: #333; color: #666; cursor: not-allowed; }
+  .btn.flash-ready { background: #00c853; }
   .btn.flash-ready:hover { background: #2ee06a; }
 
   .btn-back {
@@ -891,9 +867,9 @@ if (!('serial' in navigator)) {
     padding: 6px 12px;
     transition: color 0.2s;
   }
+
   .btn-back:hover { color: #ff8c00; }
 
-  /* Spinner */
   .spinner {
     display: none;
     width: 20px;
@@ -903,6 +879,7 @@ if (!('serial' in navigator)) {
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
+
   @keyframes spin { to { transform: rotate(360deg); } }
 
   .chip {
@@ -916,18 +893,19 @@ if (!('serial' in navigator)) {
     margin-top: 20px;
   }
 
-  /* Screen 2: Flashing */
   .flash-info {
     color: #bbb;
     font-size: 0.95rem;
     margin-bottom: 8px;
     line-height: 1.5;
   }
+
   .flash-warning {
     color: #cc8800;
     font-size: 0.82rem;
     margin-bottom: 32px;
   }
+
   .progress-container {
     background: #1a1a1a;
     border: 1px solid #2a2a2a;
@@ -936,6 +914,7 @@ if (!('serial' in navigator)) {
     overflow: hidden;
     margin-bottom: 16px;
   }
+
   .progress-fill {
     height: 100%;
     background: linear-gradient(90deg, #ff8c00, #ffb347);
@@ -943,23 +922,25 @@ if (!('serial' in navigator)) {
     transition: width 0.3s ease;
     border-radius: 12px;
   }
+
   #progress-text {
     color: #888;
     font-size: 0.85rem;
   }
 
-  /* Screen 4: Filesystem */
   #screen-filesystem h2 {
     color: #ff8c00;
     margin-bottom: 16px;
     font-size: 1.5rem;
   }
+
   #filesystem-status {
     color: #888;
     font-size: 0.85rem;
     margin-bottom: 16px;
     min-height: 1.2em;
   }
+
   #breadcrumb {
     background: #1a1a1a;
     border: 1px solid #2a2a2a;
@@ -969,15 +950,17 @@ if (!('serial' in navigator)) {
     font-size: 0.85rem;
     text-align: left;
   }
+
   .crumb {
     color: #ff8c00;
     cursor: pointer;
     padding: 2px 4px;
     border-radius: 4px;
   }
+
   .crumb:hover { background: #2a2a2a; }
   .crumb.active { color: #e0e0e0; cursor: default; }
-  .crumb.active:hover { background: none; }
+
   #file-list {
     background: #1a1a1a;
     border: 1px solid #2a2a2a;
@@ -986,6 +969,7 @@ if (!('serial' in navigator)) {
     overflow-y: auto;
     margin-bottom: 16px;
   }
+
   .file-row {
     display: flex;
     align-items: center;
@@ -994,24 +978,29 @@ if (!('serial' in navigator)) {
     cursor: pointer;
     transition: background 0.2s;
   }
+
   .file-row:hover { background: #2a2a2a; }
   .file-row:last-child { border-bottom: none; }
+
   .entry-icon {
     font-size: 1.2rem;
     margin-right: 12px;
     flex-shrink: 0;
   }
+
   .entry-name {
     flex: 1;
     font-size: 0.9rem;
     color: #e0e0e0;
   }
+
   .entry-size {
     font-size: 0.8rem;
     color: #888;
     margin-right: 12px;
     flex-shrink: 0;
   }
+
   .btn-edit, .btn-delete {
     background: none;
     border: none;
@@ -1023,20 +1012,24 @@ if (!('serial' in navigator)) {
     margin-left: 4px;
     transition: all 0.2s;
   }
+
   .btn-edit:hover { color: #ff8c00; background: #2a2a2a; }
   .btn-delete:hover { color: #ff5555; background: #2a2a2a; }
+
   .empty {
     padding: 20px;
     color: #666;
     font-style: italic;
     text-align: center;
   }
+
   .filesystem-controls {
     display: flex;
     gap: 12px;
     margin-bottom: 20px;
     flex-wrap: wrap;
   }
+
   .filesystem-controls button {
     background: #2a2a2a;
     border: 1px solid #3a3a3a;
@@ -1047,80 +1040,15 @@ if (!('serial' in navigator)) {
     font-size: 0.85rem;
     transition: all 0.2s;
   }
+
   .filesystem-controls button:hover { background: #3a3a3a; border-color: #ff8c00; }
-  /* Discord button */
-.discord-btn {
-  position: fixed;
-  left: 50%;
-  bottom: 20px;
-  transform: translateX(-50%);
-  background: #ff8c00;
-  color: #000;
-  font-size: 0.9rem;
-  font-weight: 600;
-  padding: 12px 20px;
-  border-radius: 12px;
-  text-decoration: none;
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-}
 
-.discord-btn:hover {
-  background: #ff9f2e;
-  transform: translateX(-50%) scale(1.05);
-}
-
- /* background element*/
-/* Background container */
-.stars {
-    position: fixed;
-    width: 100%;
-    height: 100%;
-}
-/* Individual star */
-.star {
-    position: absolute;
-    width: 2px;
-    height: 2px;
-    background: white;
-    border-radius: 50%;
-    opacity: 0;
-    animation: twinkle linear infinite;
-}
-/* Twinkle animation */
-@keyframes twinkle {
-    0%   { opacity: 0; }
-    50%  { opacity: 1; }
-    100% { opacity: 0; }
-}
+  .success-icon { font-size: 3rem; margin-bottom: 10px; }
+  .success-text { font-size: 1.5rem; margin-bottom: 10px; }
+  .success-sub { color: #999; margin-bottom: 20px; }
 </style>
 </head>
 <body>
-<!-- Night Background Element -->
-  <div class="stars" id="stars"></div>
-<script>
-const container = document.getElementById("stars");
-const starCount = 200;
-const centerX = window.innerWidth / 2;
-const centerY = window.innerHeight / 2;
-const radius = 200;
-for (let i = 0; i < starCount; i++) {
-    let x, y;
-    do {
-        x = Math.random() * window.innerWidth;
-        y = Math.random() * window.innerHeight;
-    } while (Math.hypot(x - centerX, y - centerY) < radius);
-    const star = document.createElement("div");
-    star.className = "star";
-    star.style.left = x + "px";
-    star.style.top = y + "px";
-    star.style.animationDuration = (2 + Math.random() * 3) + "s";
-    star.style.animationDelay = (Math.random() * 5) + "s";
-    container.appendChild(star);
-}
-</script>
-<!-- End of Night Background Element -->
-  
   <div class="container">
     <h1>Flipper Zero</h1>
     <p class="subtitle">ESP-32 Port</p>
@@ -1132,17 +1060,17 @@ for (let i = 0; i < starCount; i++) {
       <p class="board-heading">Select your board</p>
       <div class="board-cards">
         <div id="board-t-embed" class="board-card" onclick="selectBoard('t-embed')">
-          <div class="board-icon">&#9881;</div>
+          <div class="board-icon">⚙️</div>
           <div class="board-info">
             <h3>LilyGo T-Embed CC1101</h3>
-            <p>ESP32-S3 &bull; NFC &bull; IR &bull; SubGHz</p>
+            <p>ESP32-S3 • NFC • IR • SubGHz</p>
           </div>
         </div>
         <div id="board-waveshare-c6" class="board-card" onclick="selectBoard('waveshare-c6')">
-          <div class="board-icon">&#9881;</div>
+          <div class="board-icon">⚙️</div>
           <div class="board-info">
             <h3>Waveshare ESP32-C6-LCD-1.9</h3>
-            <p>ESP32-C6 &bull; BLE &bull; WiFi &bull; Touch</p>
+            <p>ESP32-C6 • BLE • WiFi • Touch</p>
           </div>
         </div>
       </div>
@@ -1150,9 +1078,7 @@ for (let i = 0; i < starCount; i++) {
 
     <!-- Screen 1: Connect -->
     <div id="screen-connect" class="screen">
-      <p id="connect-info" class="connect-text">
-        Connect your device via USB to get started.
-      </p>
+      <p id="connect-info" class="connect-text">Connect your device via USB to get started.</p>
 
       <button id="connect-btn" class="btn" disabled onclick="handleConnect()">
         <span id="connect-spinner" class="spinner"></span>
@@ -1177,9 +1103,9 @@ for (let i = 0; i < starCount; i++) {
 
     <!-- Screen 3: Success -->
     <div id="screen-success" class="screen">
-      <div class="success-icon">&#10003;</div>
+      <div class="success-icon">✔️</div>
       <div class="success-text">Success!</div>
-      <p class="success-sub">Firmware flashed successfully!.<br>Your device is rebooting.</p>
+      <p class="success-sub">Firmware flashed successfully!<br>Your device is rebooting.</p>
       <br>
       <div style="display: flex; gap: 12px; flex-direction: column;">
         <button class="btn" onclick="setConnectState('filesystem'); showScreen('screen-connect');">Manage Files</button>
@@ -1202,10 +1128,5 @@ for (let i = 0; i < starCount; i++) {
       <button class="btn-back" onclick="disconnectFilesystem(); goBack();">&larr; Back to Board Selection</button>
     </div>
   </div>
-  <center>
-<a href="https://discord.gg/y7rdnHZHa6" target="_blank" class="discord-btn">
-  Discord
-</a>
-</center>
 </body>
 </html>
