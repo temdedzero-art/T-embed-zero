@@ -4,7 +4,7 @@
 What it does (idempotent, safe to run before every build):
   1. clones BruceDevices/firmware into multi-boot/bruce if it's missing
   2. resets the working tree to a pristine state
-  3. `git pull --ff-only` so a build always picks up upstream changes
+  3. checks out Bruce v1.14 release (pinned version, not dev)
   4. re-applies tools/bruce_multiboot.patch (adds the "Flipper Zero" main-menu
      entry that reboots into the ota_0 slot — see 00_Skills/multi-boot.md)
   5. copies partitions_multiboot.csv over Bruce's custom_16Mb.csv so both
@@ -22,6 +22,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent
 BRUCE_DIR = REPO_ROOT / "multi-boot" / "bruce"
 BRUCE_REPO_URL = "https://github.com/BruceDevices/firmware.git"
+BRUCE_TAG = "v1.14"  # Pin to stable Bruce v1.14 release
 PATCH_FILE = REPO_ROOT / "tools" / "bruce_multiboot.patch"
 PARTITIONS_SRC = REPO_ROOT / "partitions_multiboot.csv"
 PARTITIONS_DST_NAME = "custom_16Mb.csv"
@@ -71,19 +72,27 @@ def main():
             BRUCE_DIR.rmdir()  # leftover empty dir — git clone wants it gone
         print(f"Bruce checkout not found, cloning into {BRUCE_DIR} ...")
         BRUCE_DIR.parent.mkdir(parents=True, exist_ok=True)
-        run(["git", "clone", "--depth", "1", BRUCE_REPO_URL, str(BRUCE_DIR)])
+        # Clone with specific tag (v1.14) instead of dev
+        run(["git", "clone", "--depth", "1", "--branch", BRUCE_TAG, BRUCE_REPO_URL, str(BRUCE_DIR)])
 
     # 1) pristine tree
     reset_worktree()
 
-    # 2) keep Bruce current
-    if git("pull", "--ff-only", check=False).returncode != 0:
+    # 2) ensure we're on the pinned Bruce v1.14 release
+    print(f"Ensuring Bruce is on {BRUCE_TAG}...")
+    if git("fetch", "--depth", "1", "origin", f"tag/{BRUCE_TAG}", check=False).returncode != 0:
         print(
-            "warning: 'git pull' failed (offline / non-ff?), continuing with the "
-            "local Bruce checkout",
+            f"warning: 'git fetch tag/{BRUCE_TAG}' failed (offline?), "
+            f"continuing with local Bruce checkout",
             file=sys.stderr,
         )
-        reset_worktree()
+    
+    if git("checkout", BRUCE_TAG, check=False).returncode != 0:
+        print(
+            f"warning: 'git checkout {BRUCE_TAG}' failed, "
+            f"continuing with current local state",
+            file=sys.stderr,
+        )
 
     # 3) apply the multi-boot menu patch
     if git("apply", "--whitespace=nowarn", str(PATCH_FILE), check=False).returncode != 0:
@@ -98,7 +107,7 @@ def main():
     shutil.copyfile(PARTITIONS_SRC, BRUCE_DIR / PARTITIONS_DST_NAME)
     print(f"copied {PARTITIONS_SRC.name} -> multi-boot/bruce/{PARTITIONS_DST_NAME}")
 
-    print("Bruce checkout is patched and ready for multi-boot.")
+    print(f"Bruce {BRUCE_TAG} checkout is patched and ready for multi-boot.")
 
 
 if __name__ == "__main__":
