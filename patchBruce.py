@@ -69,16 +69,13 @@ def main():
                     f"error: {BRUCE_DIR} exists but is not a git checkout. "
                     "Remove it and rerun, or run patchBruce.py manually."
                 )
-            BRUCE_DIR.rmdir()  # leftover empty dir — git clone wants it gone
+            BRUCE_DIR.rmdir()
         print(f"Bruce checkout not found, cloning into {BRUCE_DIR} ...")
         BRUCE_DIR.parent.mkdir(parents=True, exist_ok=True)
-        # Clone with specific tag (v1.14) instead of dev
         run(["git", "clone", "--depth", "1", "--branch", BRUCE_TAG, BRUCE_REPO_URL, str(BRUCE_DIR)])
 
-    # 1) pristine tree
     reset_worktree()
 
-    # 2) ensure we're on the pinned Bruce v1.14 release
     print(f"Ensuring Bruce is on {BRUCE_TAG}...")
     if git("fetch", "--depth", "1", "origin", f"tag/{BRUCE_TAG}", check=False).returncode != 0:
         print(
@@ -94,7 +91,6 @@ def main():
             file=sys.stderr,
         )
 
-    # 3) apply the multi-boot menu patch
     if git("apply", "--whitespace=nowarn", str(PATCH_FILE), check=False).returncode != 0:
         sys.exit(
             "\nerror: tools/bruce_multiboot.patch did not apply.\n"
@@ -103,7 +99,6 @@ def main():
             "Bruce patch').\n"
         )
 
-    # 4) single-source the partition table
     shutil.copyfile(PARTITIONS_SRC, BRUCE_DIR / PARTITIONS_DST_NAME)
     print(f"copied {PARTITIONS_SRC.name} -> multi-boot/bruce/{PARTITIONS_DST_NAME}")
 
